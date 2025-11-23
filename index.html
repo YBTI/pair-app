@@ -84,6 +84,42 @@
       white-space: pre;
       box-sizing: border-box;
     }
+
+    /* ▼ ここからスマホ用レイアウト ▼ */
+    @media (max-width: 768px) {
+      .container {
+        margin: 12px;
+        padding: 16px;
+        max-width: 100%;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .grid {
+        grid-template-columns: 1fr; /* 縦一列に並べる */
+        gap: 12px;
+      }
+
+      h1 {
+        font-size: 20px;
+      }
+
+      .controls {
+        justify-content: stretch;
+      }
+
+      .controls button {
+        width: 100%;  /* ボタンを大きく押しやすく */
+      }
+
+      textarea#participantsInput {
+        min-height: 160px;
+      }
+
+      #resultsText {
+        min-height: 180px;
+      }
+    }
   </style>
 </head>
 <body>
