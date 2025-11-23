@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ペア自動作成ツール</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      background: #f5f7fb;
+    }
+    .container {
+      max-width: 900px;
+      margin: 32px auto;
+      padding: 24px;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 24px;
+      text-align: center;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+    }
+    .field {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+      color: #555;
+    }
+    textarea, input, select {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    textarea {
+      resize: vertical;
+    }
+    button {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+      background: #4f46e5;
+      color: #fff;
+      font-weight: 600;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .controls {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+    .hint {
+      font-size: 11px;
+      color: #6b7280;
+    }
+    #resultsText {
+      width: 100%;
+      min-height: 260px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 13px;
+      white-space: pre;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ペア自動作成ツール</h1>
+    <div class="grid">
+      <!-- 左：メンバー入力 -->
+      <div>
+        <div class="field">
+          <label for="participantsInput">メンバー一覧（1行につき1人）</label>
+          <textarea id="participantsInput" placeholder="例&#10;佐藤&#10;鈴木&#10;田中" style="min-height:200px;"></textarea>
+        </div>
+        <p class="hint">※ 名前・ID・ニックネームなど、識別できれば何でもOKです。</p>
+      </div>
+
+      <!-- 右：設定 -->
+      <div>
+        <div class="field">
+          <label for="startDateInput">開始日</label>
+          <input type="date" id="startDateInput" />
+        </div>
+
+        <div class="field">
+          <label for="daysInput">日数（何日分ペアを作るか）</label>
+          <input type="number" id="daysInput" min="1" value="5" />
+        </div>
+
+        <div class="field">
+          <label for="modeSelect">ペアリングモード</label>
+          <select id="modeSelect">
+            <option value="allRandom">全員ランダムで組む</option>
+            <option value="fixedOne">1人を固定してその他をランダム</option>
+          </select>
+        </div>
+
+        <div class="field" id="fixedPersonField" style="display: none;">
+          <label for="fixedPersonSelect">固定するメンバー</label>
+          <select id="fixedPersonSelect">
+            <option value="">（メンバーを入力すると選べます）</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="pairCountSelect">1日あたりのペア数</label>
+          <select id="pairCountSelect">
+            <option value="">（メンバーを入力すると選べます）</option>
+          </select>
+          <p class="hint">※ 例：6人なら「全員 / 1ペア / 2ペア / 3ペア」から選択可能。</p>
+        </div>
+
+        <div class="field">
+          <label for="reminderTimeInput">
+            リマインド時刻（任意）
+            <span class="hint">※ブラウザ通知の簡易リマインド</span>
+          </label>
+          <input type="time" id="reminderTimeInput" />
+        </div>
+
+        <div class="controls">
+          <button id="generateButton">ペア生成</button>
+        </div>
+      </div>
+    </div>
+
+    <hr style="margin: 20px 0;" />
+
+    <h2 style="font-size:18px;margin-top:0;">スケジュール（コピー用）</h2>
+    <textarea id="resultsText" readonly placeholder="まだスケジュールがありません。"></textarea>
+    <p class="hint">
+      ※ 全期間分を1つにまとめてあります。上のテキストをそのままコピーして使ってください。<br />
+      ※ リマインドは「このページを開いている間のみ有効」です。<br />
+      ※ メール・LINEなどで通知したい場合は、別途サーバー側（バックエンド）の実装が必要です。
+    </p>
+  </div>
+
+  <script>
+    // ===== ヘルパー関数 =====
+    function getParticipants() {
+      const raw = document.getElementById("participantsInput").value;
+      return raw
+        .split("\n")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+
+    function shuffle(array) {
+      const arr = array.slice();
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function rotateArray(arr, count) {
+      const n = arr.length;
+      if (n === 0) return [];
+      const k = ((count % n) + n) % n;
+      return arr.slice(k).concat(arr.slice(0, k));
+    }
+
+    // 全員ランダムでペアを生成
+    function generateRandomPairs(participants) {
+      const arr = shuffle(participants);
+      const pairs = [];
+      while (arr.length > 1) {
+        const a = arr.pop();
+        const b = arr.pop();
+        pairs.push([a, b]);
+      }
+      // 奇数人数なら最後の1人を直前のペアに合流させる
+      if (arr.length === 1) {
+        if (pairs.length > 0) {
+          pairs[pairs.length - 1].push(arr.pop());
+        } else {
+          pairs.push([arr.pop()]);
+        }
+      }
+      return pairs;
+    }
+
+    // 1人固定でペア生成（dayIndexに応じて相手をローテーション）
+    function generatePairsWithFixed(participants, fixedName, dayIndex) {
+      const others = participants.filter((p) => p !== fixedName);
+      if (others.length === 0) {
+        return [[fixedName]];
+      }
+
+      const rotatedOthers = rotateArray(others, dayIndex);
+      const partner = rotatedOthers[0];
+      const remaining = rotatedOthers.slice(1);
+
+      const pairs = [[fixedName, partner]];
+
+      const shuffledRemaining = shuffle(remaining);
+      while (shuffledRemaining.length > 1) {
+        const a = shuffledRemaining.pop();
+        const b = shuffledRemaining.pop();
+        pairs.push([a, b]);
+      }
+      if (shuffledRemaining.length === 1) {
+        pairs.push([shuffledRemaining.pop()]);
+      }
+      return pairs;
+    }
+
+    // スケジュール生成
+    function generateSchedule(participants, startDateStr, numDays, mode, fixedPersonName, pairCountValue) {
+      const schedule = [];
+      const start = new Date(startDateStr);
+
+      for (let dayIndex = 0; dayIndex < numDays; dayIndex++) {
+        const date = new Date(start);
+        date.setDate(start.getDate() + dayIndex);
+
+        let pairs;
+        if (mode === "fixedOne" && fixedPersonName) {
+          pairs = generatePairsWithFixed(participants, fixedPersonName, dayIndex);
+        } else {
+          pairs = generateRandomPairs(participants);
+        }
+
+        // ペア数指定（数値の場合は先頭からその数だけ使用）
+        if (pairCountValue !== "all") {
+          const k = Number(pairCountValue);
+          if (!isNaN(k) && k >= 1 && pairs.length > k) {
+            pairs = pairs.slice(0, k);
+          }
+        }
+
+        schedule.push({
+          date,
+          pairs,
+        });
+      }
+
+      return schedule;
+    }
+
+    // 日付を見やすい日本語表記に
+    function formatDateJa(date) {
+      return date.toLocaleDateString("ja-JP", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        weekday: "short",
+      });
+    }
+
+    // スケジュール描画（コピー用テキストにまとめる）
+    // 形式：YYYY/MM/DD(曜) 名前、名前 / 名前、名前 ...
+    function renderSchedule(schedule) {
+      const textarea = document.getElementById("resultsText");
+      if (!schedule || schedule.length === 0) {
+        textarea.value = "まだスケジュールがありません。";
+        return;
+      }
+
+      const lines = [];
+      schedule.forEach((day) => {
+        const dateStr = formatDateJa(day.date);
+        const pairStrings = day.pairs.map((pair) => pair.join("、"));
+        lines.push(`${dateStr} ${pairStrings.join(" / ")}`);
+      });
+
+      textarea.value = lines.join("\n");
+    }
+
+    // ===== リマインド（簡易ブラウザ通知） =====
+    let reminderTimer = null;
+
+    function setupReminder(schedule, reminderTimeStr) {
+      if (reminderTimer) {
+        clearInterval(reminderTimer);
+        reminderTimer = null;
+      }
+      if (!reminderTimeStr) return;
+      if (!("Notification" in window)) {
+        console.warn("このブラウザは通知に対応していません。");
+        return;
+      }
+
+      Notification.requestPermission().then((permission) => {
+        if (permission !== "granted") {
+          console.warn("通知が許可されていません。");
+          return;
+        }
+
+        // 一定間隔でチェックして「今日のリマインド」を実行
+        reminderTimer = setInterval(() => {
+          const now = new Date();
+          const nowYMD = now.toISOString().slice(0, 10); // YYYY-MM-DD
+          const [hStr, mStr] = reminderTimeStr.split(":");
+          const h = Number(hStr);
+          const m = Number(mStr);
+
+          // 今日のスケジュールを探す
+          const todaySchedule = schedule.find((day) => {
+            const ymd = day.date.toISOString().slice(0, 10);
+            return ymd === nowYMD;
+          });
+
+          if (!todaySchedule) return;
+
+          // 通知タイミング
+          const target = new Date();
+          target.setHours(h, m, 0, 0);
+
+          // 「今がターゲット時刻 ±30秒 の間」のときだけ通知
+          const diff = now.getTime() - target.getTime();
+          if (diff > 0 && diff < 30000) {
+            const pairsText = todaySchedule.pairs
+              .map((pair) => pair.join("、"))
+              .join(" / ");
+
+            new Notification("今日のペアリマインド", {
+              body: `${formatDateJa(todaySchedule.date)} ${pairsText}`,
+            });
+          }
+        }, 15000); // 15秒ごとにチェック（デモ用）
+      });
+    }
+
+    // ===== UI 更新ロジック =====
+    const participantsInputEl = document.getElementById("participantsInput");
+    const fixedPersonFieldEl = document.getElementById("fixedPersonField");
+    const fixedPersonSelectEl = document.getElementById("fixedPersonSelect");
+    const modeSelectEl = document.getElementById("modeSelect");
+    const pairCountSelectEl = document.getElementById("pairCountSelect");
+    const generateButtonEl = document.getElementById("generateButton");
+
+    // 固定メンバー候補を更新
+    function updateFixedPersonOptions() {
+      const participants = getParticipants();
+      fixedPersonSelectEl.innerHTML = "";
+      const defaultOption = document.createElement("option");
+      defaultOption.value = "";
+      defaultOption.textContent = participants.length ? "選択してください" : "（メンバーを入力すると選べます）";
+      fixedPersonSelectEl.appendChild(defaultOption);
+
+      participants.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        fixedPersonSelectEl.appendChild(opt);
+      });
+    }
+
+    // ペア数選択肢を更新
+    function updatePairCountOptions() {
+      const participants = getParticipants();
+      pairCountSelectEl.innerHTML = "";
+
+      if (participants.length < 2) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "（メンバーを入力すると選べます）";
+        pairCountSelectEl.appendChild(opt);
+        return;
+      }
+
+      const maxPairs = Math.floor(participants.length / 2);
+
+      // 全員モード
+      const allOpt = document.createElement("option");
+      allOpt.value = "all";
+      allOpt.textContent = "全員（可能な限りペア）";
+      pairCountSelectEl.appendChild(allOpt);
+
+      // 1ペア〜最大ペア数
+      for (let i = 1; i <= maxPairs; i++) {
+        const opt = document.createElement("option");
+        opt.value = String(i);
+        opt.textContent = `${i}ペア`;
+        pairCountSelectEl.appendChild(opt);
+      }
+
+      pairCountSelectEl.selectedIndex = 0;
+    }
+
+    // メンバー入力時に両方更新
+    participantsInputEl.addEventListener("input", () => {
+      updateFixedPersonOptions();
+      updatePairCountOptions();
+    });
+
+    modeSelectEl.addEventListener("change", () => {
+      const mode = modeSelectEl.value;
+      fixedPersonFieldEl.style.display = mode === "fixedOne" ? "block" : "none";
+    });
+
+    generateButtonEl.addEventListener("click", () => {
+      const participants = getParticipants();
+      const startDate = document.getElementById("startDateInput").value;
+      const days = Number(document.getElementById("daysInput").value || "0");
+      const mode = modeSelectEl.value;
+      const fixedPerson = document.getElementById("fixedPersonSelect").value;
+      const reminderTime = document.getElementById("reminderTimeInput").value;
+      const pairCountValue = pairCountSelectEl.value || "all";
+
+      if (participants.length < 2) {
+        alert("メンバーを2人以上入力してください。");
+        return;
+      }
+      if (!startDate) {
+        alert("開始日を選択してください。");
+        return;
+      }
+      if (!days || days < 1) {
+        alert("日数は1以上の数字を入力してください。");
+        return;
+      }
+      if (mode === "fixedOne" && !fixedPerson) {
+        alert("固定するメンバーを選択してください。");
+        return;
+      }
+      if (mode === "fixedOne" && !participants.includes(fixedPerson)) {
+        alert("固定メンバーがメンバー一覧に存在しません。");
+        return;
+      }
+
+      const schedule = generateSchedule(
+        participants,
+        startDate,
+        days,
+        mode,
+        fixedPerson,
+        pairCountValue
+      );
+      renderSchedule(schedule);
+      setupReminder(schedule, reminderTime);
+    });
+
+    // 初期状態
+    updatePairCountOptions();
+    renderSchedule([]);
+  </script>
+</body>
+</html>
